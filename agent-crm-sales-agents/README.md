@@ -85,7 +85,6 @@ Listing request body:
 
 ```json
 {
-  "campaignId": 1,
   "pageNumber": 1,
   "pageSize": 10,
   "search": ""

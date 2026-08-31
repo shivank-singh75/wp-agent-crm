@@ -341,9 +341,6 @@ final class Agent_CRM_Sales_Agents_Plugin
                 'callback' => [$this, 'rest_sales_agents_listing'],
                 'permission_callback' => '__return_true',
                 'args' => [
-                    'campaignId' => [
-                        'sanitize_callback' => 'absint',
-                    ],
                     'tenantId' => [
                         'sanitize_callback' => 'absint',
                     ],
@@ -417,9 +414,10 @@ final class Agent_CRM_Sales_Agents_Plugin
             ],
             $body
         );
+        unset($body['campaignId'], $body['filtercampaignId']);
 
         return $this->rest_proxy_response(
-            $this->proxy_website_request((string) $this->get_settings()['endpoint_path'], $body)
+            $this->proxy_website_request((string) $this->get_settings()['endpoint_path'], $body, false)
         );
     }
 
@@ -537,10 +535,6 @@ final class Agent_CRM_Sales_Agents_Plugin
             'pageNumber' => 1,
         ];
 
-        if (!empty($settings['campaign_id'])) {
-            $request_body['campaignId'] = absint($settings['campaign_id']);
-        }
-
         $lead_id = absint($args['lead_id'] ?? $settings['default_lead_id']);
 
         if ($lead_id > 0) {
@@ -602,7 +596,7 @@ final class Agent_CRM_Sales_Agents_Plugin
         return $agents;
     }
 
-    private function proxy_website_request(string $endpoint_path, array $request_body)
+    private function proxy_website_request(string $endpoint_path, array $request_body, bool $include_campaign = true)
     {
         $settings = $this->get_settings();
         $base_url = untrailingslashit($settings['base_url']);
@@ -617,7 +611,7 @@ final class Agent_CRM_Sales_Agents_Plugin
             $request_body['tenantId'] = absint($settings['tenant_id']);
         }
 
-        if (empty($request_body['campaignId']) && !empty($settings['campaign_id'])) {
+        if ($include_campaign && empty($request_body['campaignId']) && !empty($settings['campaign_id'])) {
             $request_body['campaignId'] = absint($settings['campaign_id']);
         }
 
