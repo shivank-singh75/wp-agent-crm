@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Agent CRM Sales Agents
  * Description: Displays sales agents from an Agent CRM backend instance with configurable connection, cache, and display settings.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Essence
  * Requires at least: 5.8
  * Requires PHP: 7.4
@@ -21,6 +21,8 @@ final class Agent_CRM_Sales_Agents_Plugin
     private const REST_ROUTE = '/agents';
     private const LEGACY_ENDPOINT_PATH = '/api/v1/agent';
     private const DEFAULT_ENDPOINT_PATH = '/api/v1/websites/sales-agents/listing';
+    private const DEFAULT_SIGNUP_ENDPOINT_PATH = '/api/v1/websites/sales-agents/signup';
+    private const DEFAULT_APPOINTMENTS_ENDPOINT_PATH = '/api/v1/websites/sales-agents/{id}/appointments';
 
     private static ?self $instance = null;
 
@@ -89,8 +91,11 @@ final class Agent_CRM_Sales_Agents_Plugin
         );
 
         $this->add_field('base_url', __('CRM Base URL', 'agent-crm-sales-agents'), 'url');
-        $this->add_field('endpoint_path', __('Agent Endpoint Path', 'agent-crm-sales-agents'), 'text');
+        $this->add_field('endpoint_path', __('Listing Endpoint Path', 'agent-crm-sales-agents'), 'text');
+        $this->add_field('signup_endpoint_path', __('Signup Endpoint Path', 'agent-crm-sales-agents'), 'text');
+        $this->add_field('appointments_endpoint_path', __('Appointments Endpoint Path', 'agent-crm-sales-agents'), 'text');
         $this->add_field('tenant_id', __('Instance / Tenant ID', 'agent-crm-sales-agents'), 'number');
+        $this->add_field('campaign_id', __('Campaign ID', 'agent-crm-sales-agents'), 'number');
         $this->add_field('client_id', __('Website Client ID', 'agent-crm-sales-agents'), 'text');
         $this->add_field('client_secret', __('Website Client Secret', 'agent-crm-sales-agents'), 'password');
 
@@ -171,8 +176,11 @@ final class Agent_CRM_Sales_Agents_Plugin
 
         $settings = [
             'base_url' => esc_url_raw(trim((string) ($input['base_url'] ?? ''))),
-            'endpoint_path' => sanitize_text_field($input['endpoint_path'] ?? self::DEFAULT_ENDPOINT_PATH),
+            'endpoint_path' => $this->sanitize_endpoint_path($input['endpoint_path'] ?? self::DEFAULT_ENDPOINT_PATH, self::DEFAULT_ENDPOINT_PATH),
+            'signup_endpoint_path' => $this->sanitize_endpoint_path($input['signup_endpoint_path'] ?? self::DEFAULT_SIGNUP_ENDPOINT_PATH, self::DEFAULT_SIGNUP_ENDPOINT_PATH),
+            'appointments_endpoint_path' => $this->sanitize_endpoint_path($input['appointments_endpoint_path'] ?? self::DEFAULT_APPOINTMENTS_ENDPOINT_PATH, self::DEFAULT_APPOINTMENTS_ENDPOINT_PATH),
             'tenant_id' => absint($input['tenant_id'] ?? 0),
+            'campaign_id' => absint($input['campaign_id'] ?? 1),
             'client_id' => sanitize_text_field($input['client_id'] ?? ($input['service_username'] ?? '')),
             'client_secret' => (string) ($input['client_secret'] ?? ($input['service_password'] ?? '')),
             'default_lead_id' => absint($input['default_lead_id'] ?? 0),
@@ -195,6 +203,10 @@ final class Agent_CRM_Sales_Agents_Plugin
 
         if ($settings['endpoint_path'] === '' || $settings['endpoint_path'] === self::LEGACY_ENDPOINT_PATH) {
             $settings['endpoint_path'] = self::DEFAULT_ENDPOINT_PATH;
+        }
+
+        if (strpos($settings['appointments_endpoint_path'], '{id}') === false) {
+            $settings['appointments_endpoint_path'] = self::DEFAULT_APPOINTMENTS_ENDPOINT_PATH;
         }
 
         self::clear_all_cache();
@@ -284,14 +296,14 @@ final class Agent_CRM_Sales_Agents_Plugin
             'agent-crm-sales-agents',
             plugins_url('assets/css/agent-crm-sales-agents.css', __FILE__),
             [],
-            '1.1.0'
+            '1.2.0'
         );
 
         wp_register_script(
             'agent-crm-sales-agents',
             plugins_url('assets/js/agent-crm-sales-agents.js', __FILE__),
             [],
-            '1.1.0',
+            '1.2.0',
             true
         );
     }
@@ -307,6 +319,59 @@ final class Agent_CRM_Sales_Agents_Plugin
                 'permission_callback' => '__return_true',
                 'args' => [
                     'lead_id' => [
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ]
+        );
+
+        register_rest_route(
+            self::REST_NAMESPACE,
+            '/sales-agents/listing',
+            [
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => [$this, 'rest_sales_agents_listing'],
+                'permission_callback' => '__return_true',
+                'args' => [
+                    'campaignId' => [
+                        'sanitize_callback' => 'absint',
+                    ],
+                    'tenantId' => [
+                        'sanitize_callback' => 'absint',
+                    ],
+                    'pageNumber' => [
+                        'sanitize_callback' => 'absint',
+                    ],
+                    'pageSize' => [
+                        'sanitize_callback' => 'absint',
+                    ],
+                    'search' => [
+                        'sanitize_callback' => 'sanitize_text_field',
+                    ],
+                ],
+            ]
+        );
+
+        register_rest_route(
+            self::REST_NAMESPACE,
+            '/sales-agents/signup',
+            [
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => [$this, 'rest_sales_agents_signup'],
+                'permission_callback' => '__return_true',
+            ]
+        );
+
+        register_rest_route(
+            self::REST_NAMESPACE,
+            '/sales-agents/(?P<id>\d+)/appointments',
+            [
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => [$this, 'rest_sales_agent_appointments'],
+                'permission_callback' => '__return_true',
+                'args' => [
+                    'id' => [
+                        'required' => true,
                         'sanitize_callback' => 'absint',
                     ],
                 ],
@@ -331,6 +396,49 @@ final class Agent_CRM_Sales_Agents_Plugin
             'success' => true,
             'data' => $result,
         ]);
+    }
+
+    public function rest_sales_agents_listing(WP_REST_Request $request): WP_REST_Response
+    {
+        $body = $this->get_json_request_body($request);
+        $body = array_merge(
+            [
+                'tenantId' => $this->get_settings()['tenant_id'],
+                'pageNumber' => 1,
+                'pageSize' => 100,
+            ],
+            $body
+        );
+
+        return $this->rest_proxy_response(
+            $this->proxy_website_request((string) $this->get_settings()['endpoint_path'], $body)
+        );
+    }
+
+    public function rest_sales_agents_signup(WP_REST_Request $request): WP_REST_Response
+    {
+        return $this->rest_proxy_response(
+            $this->proxy_website_request((string) $this->get_settings()['signup_endpoint_path'], $this->get_json_request_body($request))
+        );
+    }
+
+    public function rest_sales_agent_appointments(WP_REST_Request $request): WP_REST_Response
+    {
+        $sales_agent_id = absint($request->get_param('id'));
+
+        if ($sales_agent_id < 1) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => __('Valid sales agent ID is required.', 'agent-crm-sales-agents'),
+            ], 400);
+        }
+
+        return $this->rest_proxy_response(
+            $this->proxy_website_request(
+                $this->endpoint_with_sales_agent_id((string) $this->get_settings()['appointments_endpoint_path'], $sales_agent_id),
+                $this->get_json_request_body($request)
+            )
+        );
     }
 
     public function render_shortcode(array $atts = []): string
@@ -420,6 +528,11 @@ final class Agent_CRM_Sales_Agents_Plugin
             'pageSize' => 100,
             'pageNumber' => 1,
         ];
+
+        if (!empty($settings['campaign_id'])) {
+            $request_body['campaignId'] = absint($settings['campaign_id']);
+        }
+
         $lead_id = absint($args['lead_id'] ?? $settings['default_lead_id']);
 
         if ($lead_id > 0) {
@@ -481,6 +594,94 @@ final class Agent_CRM_Sales_Agents_Plugin
         return $agents;
     }
 
+    private function proxy_website_request(string $endpoint_path, array $request_body)
+    {
+        $settings = $this->get_settings();
+        $base_url = untrailingslashit($settings['base_url']);
+        $client_id = (string) ($settings['client_id'] ?: ($settings['service_username'] ?? ''));
+        $client_secret = (string) ($settings['client_secret'] ?: ($settings['service_password'] ?? ''));
+
+        if ($base_url === '' || $client_id === '' || $client_secret === '' || empty($settings['tenant_id'])) {
+            return new WP_Error('agent_crm_not_configured', __('Agent CRM plugin is not configured.', 'agent-crm-sales-agents'));
+        }
+
+        if (empty($request_body['tenantId'])) {
+            $request_body['tenantId'] = absint($settings['tenant_id']);
+        }
+
+        if (empty($request_body['campaignId']) && !empty($settings['campaign_id'])) {
+            $request_body['campaignId'] = absint($settings['campaign_id']);
+        }
+
+        $url = $base_url . '/' . ltrim($endpoint_path, '/');
+        $response = wp_remote_post(
+            $url,
+            [
+                'timeout' => 15,
+                'headers' => [
+                    'Authorization' => 'Basic ' . base64_encode($client_id . ':' . $client_secret),
+                    'x-tenant-id' => (string) absint($settings['tenant_id']),
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ],
+                'body' => wp_json_encode($request_body),
+            ]
+        );
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (!is_array($body)) {
+            $body = [
+                'success' => $status >= 200 && $status < 300,
+                'message' => wp_remote_retrieve_body($response),
+            ];
+        }
+
+        return [
+            'status' => $status,
+            'body' => $body,
+        ];
+    }
+
+    private function rest_proxy_response($result): WP_REST_Response
+    {
+        if (is_wp_error($result)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => $result->get_error_message(),
+            ], 502);
+        }
+
+        $status = isset($result['status']) ? (int) $result['status'] : 200;
+        $body = is_array($result['body'] ?? null) ? $result['body'] : [];
+
+        return new WP_REST_Response($body, $status);
+    }
+
+    private function get_json_request_body(WP_REST_Request $request): array
+    {
+        $body = $request->get_json_params();
+
+        if (!is_array($body)) {
+            $body = [];
+        }
+
+        foreach ($request->get_params() as $key => $value) {
+            if ($key === 'id') {
+                continue;
+            }
+
+            $body[$key] = $value;
+        }
+
+        return $body;
+    }
+
     private function normalize_agent(array $agent): array
     {
         $first = trim((string) ($agent['firstName'] ?? ''));
@@ -522,8 +723,20 @@ final class Agent_CRM_Sales_Agents_Plugin
             $settings['client_secret'] = $settings['service_password'];
         }
 
-        if ($settings['endpoint_path'] === self::LEGACY_ENDPOINT_PATH) {
+        if ($settings['endpoint_path'] === '' || $settings['endpoint_path'] === self::LEGACY_ENDPOINT_PATH) {
             $settings['endpoint_path'] = self::DEFAULT_ENDPOINT_PATH;
+        }
+
+        $settings['endpoint_path'] = $this->sanitize_endpoint_path($settings['endpoint_path'], self::DEFAULT_ENDPOINT_PATH);
+        $settings['signup_endpoint_path'] = $this->sanitize_endpoint_path($settings['signup_endpoint_path'], self::DEFAULT_SIGNUP_ENDPOINT_PATH);
+        $settings['appointments_endpoint_path'] = $this->sanitize_endpoint_path($settings['appointments_endpoint_path'], self::DEFAULT_APPOINTMENTS_ENDPOINT_PATH);
+
+        if ($settings['signup_endpoint_path'] === '') {
+            $settings['signup_endpoint_path'] = self::DEFAULT_SIGNUP_ENDPOINT_PATH;
+        }
+
+        if ($settings['appointments_endpoint_path'] === '' || strpos($settings['appointments_endpoint_path'], '{id}') === false) {
+            $settings['appointments_endpoint_path'] = self::DEFAULT_APPOINTMENTS_ENDPOINT_PATH;
         }
 
         return $settings;
@@ -534,7 +747,10 @@ final class Agent_CRM_Sales_Agents_Plugin
         return [
             'base_url' => '',
             'endpoint_path' => self::DEFAULT_ENDPOINT_PATH,
+            'signup_endpoint_path' => self::DEFAULT_SIGNUP_ENDPOINT_PATH,
+            'appointments_endpoint_path' => self::DEFAULT_APPOINTMENTS_ENDPOINT_PATH,
             'tenant_id' => 1,
+            'campaign_id' => 1,
             'client_id' => '',
             'client_secret' => '',
             'service_username' => '',
@@ -553,6 +769,23 @@ final class Agent_CRM_Sales_Agents_Plugin
     private function cache_key(string $url, array $settings, array $request_body = []): string
     {
         return 'agent_crm_sales_agents_' . md5($url . '|' . (string) $settings['tenant_id'] . '|' . wp_json_encode($request_body));
+    }
+
+    private function sanitize_endpoint_path($path, string $default): string
+    {
+        $path = sanitize_text_field($path);
+        $path = trim($path);
+
+        if ($path === '') {
+            return $default;
+        }
+
+        return '/' . ltrim($path, '/');
+    }
+
+    private function endpoint_with_sales_agent_id(string $endpoint_path, int $sales_agent_id): string
+    {
+        return str_replace('{id}', (string) $sales_agent_id, $endpoint_path);
     }
 
     private function starts_with(string $value, string $prefix): bool

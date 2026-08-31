@@ -4,10 +4,18 @@ Uploadable WordPress plugin for displaying sales agents from an Agent CRM backen
 
 ## What It Calls
 
-By default the plugin calls:
+By default the shortcode and legacy WordPress proxy call:
 
 ```text
 POST {CRM_BASE_URL}/api/v1/websites/sales-agents/listing
+```
+
+The plugin also proxies these website APIs, and each backend endpoint path can be changed in Settings > Agent CRM Agents:
+
+```text
+POST {CRM_BASE_URL}/api/v1/websites/sales-agents/listing
+POST {CRM_BASE_URL}/api/v1/websites/sales-agents/signup
+POST {CRM_BASE_URL}/api/v1/websites/sales-agents/{id}/appointments
 ```
 
 The CRM backend at `/home/Essence/2026/agent-crm/agent-crm-backend` protects this endpoint with `requireWebsiteBasicAuth`, using the Website Client ID and Website Client Secret as Basic Auth credentials:
@@ -26,7 +34,8 @@ The plugin posts JSON similar to:
 {
   "tenantId": 1,
   "pageSize": 100,
-  "pageNumber": 1
+  "pageNumber": 1,
+  "campaignId": 1
 }
 ```
 
@@ -36,7 +45,7 @@ The plugin posts JSON similar to:
 2. In WordPress admin, go to Plugins > Add New > Upload Plugin.
 3. Upload the zip and activate it.
 4. Go to Settings > Agent CRM Agents.
-5. Enter the CRM base URL, website client credentials, tenant ID, and display options.
+5. Enter the CRM base URL, website client credentials, tenant ID, campaign ID, and display options.
 6. Use the Test Connection button.
 
 ## Shortcode
@@ -65,15 +74,68 @@ The plugin also exposes a public WordPress REST proxy:
 
 ```text
 GET /wp-json/agent-crm-sales-agents/v1/agents
+POST /wp-json/agent-crm-sales-agents/v1/sales-agents/listing
+POST /wp-json/agent-crm-sales-agents/v1/sales-agents/signup
+POST /wp-json/agent-crm-sales-agents/v1/sales-agents/{id}/appointments
 ```
 
-This endpoint returns normalized WordPress JSON while keeping CRM website client credentials server-side.
+These endpoints keep CRM website client credentials server-side. The `/agents` endpoint returns normalized WordPress JSON for existing integrations; the `/sales-agents/*` endpoints pass through the backend website API response.
+
+Listing request body:
+
+```json
+{
+  "campaignId": 1,
+  "pageNumber": 1,
+  "pageSize": 10,
+  "search": ""
+}
+```
+
+Signup request body:
+
+```json
+{
+  "campaignId": 1,
+  "firstName": "Website",
+  "lastName": "Agent",
+  "email": "website.agent@example.com",
+  "address": "123 Main Street",
+  "pincode": "10001",
+  "phoneCode": "+1",
+  "phone": "5551234567"
+}
+```
+
+Appointment request body:
+
+```json
+{
+  "campaignId": 1,
+  "fullName": "John Customer",
+  "emailAddress": "john.customer@example.com",
+  "phoneCode": "+1",
+  "phoneNumber": "5559876543",
+  "zipCode": "10001",
+  "country": "US",
+  "startTime": "2026-09-01T10:00:00.000Z",
+  "endTime": "2026-09-01T10:30:00.000Z",
+  "subject": "Website Appointment",
+  "description": "Appointment booked from website.",
+  "formDataJson": {
+    "source": "website"
+  }
+}
+```
 
 ## Configurable Settings
 
 - CRM Base URL
-- Agent Endpoint Path
+- Listing Endpoint Path, defaults to `/api/v1/websites/sales-agents/listing`
+- Signup Endpoint Path, defaults to `/api/v1/websites/sales-agents/signup`
+- Appointments Endpoint Path, defaults to `/api/v1/websites/sales-agents/{id}/appointments`
 - Instance / Tenant ID
+- Campaign ID, defaults to `1`
 - Website Client ID
 - Website Client Secret
 - Title
