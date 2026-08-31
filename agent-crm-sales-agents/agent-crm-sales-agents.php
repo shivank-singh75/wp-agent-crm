@@ -154,14 +154,22 @@ final class Agent_CRM_Sales_Agents_Plugin
                 $input_type = in_array($type, ['url', 'number', 'password'], true) ? $type : 'text';
                 $autocomplete = $key === 'client_secret' ? ' autocomplete="new-password"' : '';
                 $display_value = $key === 'client_secret' ? '' : (string) $value;
+                $placeholder = $key === 'client_secret' && $value !== ''
+                    ? __('Saved - leave blank to keep unchanged', 'agent-crm-sales-agents')
+                    : '';
 
                 printf(
-                    '<input type="%s" class="regular-text" name="%s" value="%s"%s>',
+                    '<input type="%s" class="regular-text" name="%s" value="%s" placeholder="%s"%s>',
                     esc_attr($input_type),
                     esc_attr($name),
                     esc_attr($display_value),
+                    esc_attr($placeholder),
                     $autocomplete
                 );
+
+                if ($key === 'client_secret' && $value !== '') {
+                    echo '<p class="description">' . esc_html__('A Website Client Secret is saved. Enter a new value only if you want to replace it.', 'agent-crm-sales-agents') . '</p>';
+                }
             },
             'agent-crm-sales-agents',
             $this->starts_with($key, 'show_') || in_array($key, ['title', 'layout', 'cache_ttl', 'empty_message'], true)
