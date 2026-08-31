@@ -1,0 +1,91 @@
+.agent-crm-sales-agents {
+    --agent-crm-border: #d9e2ec;
+    --agent-crm-text: #17202a;
+    --agent-crm-muted: #52606d;
+    --agent-crm-surface: #ffffff;
+    --agent-crm-accent: #0f6b5f;
+    color: var(--agent-crm-text);
+    margin-block: 1.5rem;
+}
+
+.agent-crm-sales-agents__title {
+    font-size: clamp(1.25rem, 2vw, 1.75rem);
+    line-height: 1.2;
+    margin: 0 0 1rem;
+}
+
+.agent-crm-sales-agents__items {
+    display: grid;
+    gap: 1rem;
+}
+
+.agent-crm-sales-agents--grid .agent-crm-sales-agents__items {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.agent-crm-sales-agents--list .agent-crm-sales-agents__items {
+    grid-template-columns: 1fr;
+}
+
+.agent-crm-sales-agents__card {
+    align-items: center;
+    background: var(--agent-crm-surface);
+    border: 1px solid var(--agent-crm-border);
+    border-radius: 8px;
+    display: flex;
+    gap: 0.875rem;
+    min-width: 0;
+    padding: 1rem;
+}
+
+.agent-crm-sales-agents__avatar {
+    aspect-ratio: 1;
+    border-radius: 999px;
+    flex: 0 0 3.5rem;
+    height: 3.5rem;
+    object-fit: cover;
+    width: 3.5rem;
+}
+
+.agent-crm-sales-agents__avatar--initials {
+    align-items: center;
+    background: #e6f4f1;
+    color: var(--agent-crm-accent);
+    display: inline-flex;
+    font-size: 1rem;
+    font-weight: 700;
+    justify-content: center;
+}
+
+.agent-crm-sales-agents__body {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.agent-crm-sales-agents__name {
+    font-size: 1rem;
+    line-height: 1.25;
+    margin: 0;
+}
+
+.agent-crm-sales-agents__meta {
+    color: var(--agent-crm-muted);
+    font-size: 0.9375rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.agent-crm-sales-agents a.agent-crm-sales-agents__meta:hover {
+    color: var(--agent-crm-accent);
+    text-decoration: underline;
+}
+
+.agent-crm-sales-agents__message {
+    border: 1px solid var(--agent-crm-border);
+    border-radius: 8px;
+    color: var(--agent-crm-muted);
+    margin: 0;
+    padding: 1rem;
+}
