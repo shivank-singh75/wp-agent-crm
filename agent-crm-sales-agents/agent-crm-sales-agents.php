@@ -449,6 +449,11 @@ final class Agent_CRM_Sales_Agents_Plugin
 
     public function render_shortcode(array $atts = []): string
     {
+        return $this->render_listing($atts);
+    }
+
+    public function render_listing(array $atts = []): string
+    {
         $settings = $this->get_settings();
         $atts = shortcode_atts(
             [
@@ -458,6 +463,9 @@ final class Agent_CRM_Sales_Agents_Plugin
                 'show_email' => $settings['show_email'] ? '1' : '0',
                 'show_phone' => $settings['show_phone'] ? '1' : '0',
                 'show_distance' => $settings['show_distance'] ? '1' : '0',
+                'page_size' => 100,
+                'page_number' => 1,
+                'search' => '',
             ],
             $atts,
             'agent_crm_sales_agents'
@@ -465,7 +473,12 @@ final class Agent_CRM_Sales_Agents_Plugin
 
         wp_enqueue_style('agent-crm-sales-agents');
 
-        $agents = $this->fetch_agents(['lead_id' => absint($atts['lead_id'])]);
+        $agents = $this->fetch_agents([
+            'lead_id' => absint($atts['lead_id']),
+            'page_size' => absint($atts['page_size']),
+            'page_number' => absint($atts['page_number']),
+            'search' => sanitize_text_field((string) $atts['search']),
+        ]);
         $layout = in_array($atts['layout'], ['grid', 'list'], true) ? $atts['layout'] : $settings['layout'];
         $show_email = filter_var($atts['show_email'], FILTER_VALIDATE_BOOLEAN);
         $show_phone = filter_var($atts['show_phone'], FILTER_VALIDATE_BOOLEAN);
@@ -506,6 +519,18 @@ final class Agent_CRM_Sales_Agents_Plugin
                                 <?php if ($show_distance && !empty($normalized['distance'])) : ?>
                                     <span class="agent-crm-sales-agents__meta"><?php echo esc_html($normalized['distance']); ?> <?php esc_html_e('miles away', 'agent-crm-sales-agents'); ?></span>
                                 <?php endif; ?>
+                                <span class="agent-crm-sales-agents__meta"><?php esc_html_e('Address:', 'agent-crm-sales-agents'); ?> <?php echo esc_html($normalized['licenseAddress'] ?: __('N/A', 'agent-crm-sales-agents')); ?></span>
+                                <span class="agent-crm-sales-agents__meta"><?php esc_html_e('Zip Code:', 'agent-crm-sales-agents'); ?> <?php echo esc_html($normalized['licenseZipCode'] ?: __('N/A', 'agent-crm-sales-agents')); ?></span>
+                                <div class="agent-crm-sales-agents__actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary js-book-agent"
+                                        data-agent-id="<?php echo esc_attr($normalized['id']); ?>"
+                                        data-agent-name="<?php echo esc_attr($normalized['name']); ?>"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#appointmentBookingModal"
+                                    ><?php esc_html_e('Book Appointment', 'agent-crm-sales-agents'); ?></button>
+                                </div>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -531,14 +556,18 @@ final class Agent_CRM_Sales_Agents_Plugin
         $endpoint_path = '/' . ltrim((string) $settings['endpoint_path'], '/');
         $request_body = [
             'tenantId' => absint($settings['tenant_id']),
-            'pageSize' => 100,
-            'pageNumber' => 1,
+            'pageSize' => max(1, absint($args['page_size'] ?? 100)),
+            'pageNumber' => max(1, absint($args['page_number'] ?? 1)),
         ];
 
         $lead_id = absint($args['lead_id'] ?? $settings['default_lead_id']);
 
         if ($lead_id > 0) {
             $request_body['leadId'] = $lead_id;
+        }
+
+        if (!empty($args['search'])) {
+            $request_body['search'] = sanitize_text_field((string) $args['search']);
         }
 
         $url = $base_url . $endpoint_path;
@@ -686,12 +715,16 @@ final class Agent_CRM_Sales_Agents_Plugin
 
     private function normalize_agent(array $agent): array
     {
-        $first = trim((string) ($agent['firstName'] ?? ''));
-        $last = trim((string) ($agent['lastName'] ?? ''));
+        $first = trim((string) ($agent['firstName'] ?? ($agent['first_name'] ?? '')));
+        $last = trim((string) ($agent['lastName'] ?? ($agent['last_name'] ?? '')));
         $name = trim($first . ' ' . $last);
 
         if ($name === '') {
-            $name = !empty($agent['email']) ? (string) $agent['email'] : __('Sales agent', 'agent-crm-sales-agents');
+            $name = trim((string) ($agent['name'] ?? ($agent['fullName'] ?? ($agent['full_name'] ?? ''))));
+        }
+
+        if ($name === '') {
+            $name = __('Sales agent', 'agent-crm-sales-agents');
         }
 
         $phone = trim((string) ($agent['phone'] ?? ''));
@@ -701,13 +734,28 @@ final class Agent_CRM_Sales_Agents_Plugin
             $phone = '+' . preg_replace('/\D+/', '', $phone_code) . preg_replace('/\D+/', '', $phone);
         }
 
+        $location_parts = array_filter([
+            $agent['city'] ?? '',
+            $agent['state'] ?? '',
+            $agent['pincode'] ?? ($agent['zipCode'] ?? ($agent['zip_code'] ?? '')),
+        ]);
+
         return [
+            'id' => (string) ($agent['salesAgentId'] ?? ($agent['agentId'] ?? ($agent['userId'] ?? ($agent['id'] ?? '')))),
             'name' => $name,
             'initials' => strtoupper(substr($first ?: $name, 0, 1) . substr($last, 0, 1)),
             'email' => sanitize_email($agent['email'] ?? ''),
             'phone' => $phone,
-            'profilePicture' => esc_url_raw($agent['profilePicture'] ?? ''),
+            'profilePicture' => esc_url_raw($agent['profilePicture'] ?? ($agent['profile_picture'] ?? ($agent['avatar'] ?? ''))),
             'distance' => isset($agent['distance']) ? (string) $agent['distance'] : '',
+            'location' => implode(', ', array_map('sanitize_text_field', $location_parts)),
+            'address' => sanitize_text_field((string) ($agent['address'] ?? '')),
+            'licenseAddress' => sanitize_text_field((string) ($agent['licenceAddress'] ?? ($agent['licenseAddress'] ?? ($agent['license_address'] ?? '')))),
+            'licenseZipCode' => sanitize_text_field((string) ($agent['licenceZipCode'] ?? ($agent['licenseZipCode'] ?? ($agent['license_zip_code'] ?? '')))),
+            'serviceArea' => sanitize_text_field((string) ($agent['serviceArea'] ?? ($agent['leadCoverageInMiles'] ?? ''))),
+            'specialties' => sanitize_text_field((string) ($agent['specialties'] ?? ($agent['specialty'] ?? ''))),
+            'experience' => sanitize_text_field((string) ($agent['yearsExperience'] ?? ($agent['years_experience'] ?? ''))),
+            'license' => sanitize_text_field((string) ($agent['licenceNumber'] ?? ($agent['licenseNumber'] ?? ($agent['license_number'] ?? '')))),
         ];
     }
 
@@ -813,3 +861,8 @@ register_activation_hook(__FILE__, ['Agent_CRM_Sales_Agents_Plugin', 'activate']
 register_deactivation_hook(__FILE__, ['Agent_CRM_Sales_Agents_Plugin', 'deactivate']);
 
 Agent_CRM_Sales_Agents_Plugin::instance();
+
+function agent_crm_sales_agents_render_listing(array $params = []): string
+{
+    return Agent_CRM_Sales_Agents_Plugin::instance()->render_listing($params);
+}

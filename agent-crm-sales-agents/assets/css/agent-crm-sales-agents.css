@@ -28,7 +28,7 @@
 }
 
 .agent-crm-sales-agents__card {
-    align-items: center;
+    align-items: flex-start;
     background: var(--agent-crm-surface);
     border: 1px solid var(--agent-crm-border);
     border-radius: 8px;
@@ -61,6 +61,7 @@
     display: grid;
     gap: 0.25rem;
     min-width: 0;
+    width: 100%;
 }
 
 .agent-crm-sales-agents__name {
@@ -80,6 +81,18 @@
 .agent-crm-sales-agents a.agent-crm-sales-agents__meta:hover {
     color: var(--agent-crm-accent);
     text-decoration: underline;
+}
+
+.agent-crm-sales-agents__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.agent-crm-sales-agents__actions .btn {
+    flex: 1 1 100%;
+    min-height: 2.75rem;
 }
 
 .agent-crm-sales-agents__message {
