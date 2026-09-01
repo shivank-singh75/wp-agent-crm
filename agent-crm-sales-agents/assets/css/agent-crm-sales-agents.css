@@ -83,6 +83,32 @@
     text-decoration: underline;
 }
 
+.agent-crm-sales-agents__details {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0.5rem 0 0;
+}
+
+.agent-crm-sales-agents__details div {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.agent-crm-sales-agents__details dt {
+    color: var(--agent-crm-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-transform: uppercase;
+}
+
+.agent-crm-sales-agents__details dd {
+    font-size: 0.9rem;
+    line-height: 1.35;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
 .agent-crm-sales-agents__actions {
     display: flex;
     flex-wrap: wrap;

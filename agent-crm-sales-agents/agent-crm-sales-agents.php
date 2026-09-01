@@ -439,10 +439,19 @@ final class Agent_CRM_Sales_Agents_Plugin
             ], 400);
         }
 
+        $request_body = $this->get_appointment_request_body($request);
+
+        if ($request_body['phoneNumber'] === '') {
+            return new WP_REST_Response([
+                'success' => false,
+                'message' => __('Phone is required.', 'agent-crm-sales-agents'),
+            ], 400);
+        }
+
         return $this->rest_proxy_response(
             $this->proxy_website_request(
                 $this->endpoint_with_sales_agent_id((string) $this->get_settings()['appointments_endpoint_path'], $sales_agent_id),
-                $this->get_json_request_body($request)
+                $request_body
             )
         );
     }
@@ -480,8 +489,6 @@ final class Agent_CRM_Sales_Agents_Plugin
             'search' => sanitize_text_field((string) $atts['search']),
         ]);
         $layout = in_array($atts['layout'], ['grid', 'list'], true) ? $atts['layout'] : $settings['layout'];
-        $show_email = filter_var($atts['show_email'], FILTER_VALIDATE_BOOLEAN);
-        $show_phone = filter_var($atts['show_phone'], FILTER_VALIDATE_BOOLEAN);
         $show_distance = filter_var($atts['show_distance'], FILTER_VALIDATE_BOOLEAN);
 
         ob_start();
@@ -510,17 +517,26 @@ final class Agent_CRM_Sales_Agents_Plugin
 
                             <div class="agent-crm-sales-agents__body">
                                 <h3 class="agent-crm-sales-agents__name"><?php echo esc_html($normalized['name']); ?></h3>
-                                <?php if ($show_email && !empty($normalized['email'])) : ?>
-                                    <a class="agent-crm-sales-agents__meta" href="mailto:<?php echo esc_attr($normalized['email']); ?>"><?php echo esc_html($normalized['email']); ?></a>
-                                <?php endif; ?>
-                                <?php if ($show_phone && !empty($normalized['phone'])) : ?>
-                                    <a class="agent-crm-sales-agents__meta" href="tel:<?php echo esc_attr($normalized['phone']); ?>"><?php echo esc_html($normalized['phone']); ?></a>
-                                <?php endif; ?>
                                 <?php if ($show_distance && !empty($normalized['distance'])) : ?>
                                     <span class="agent-crm-sales-agents__meta"><?php echo esc_html($normalized['distance']); ?> <?php esc_html_e('miles away', 'agent-crm-sales-agents'); ?></span>
                                 <?php endif; ?>
-                                <span class="agent-crm-sales-agents__meta"><?php esc_html_e('Address:', 'agent-crm-sales-agents'); ?> <?php echo esc_html($normalized['licenseAddress'] ?: __('N/A', 'agent-crm-sales-agents')); ?></span>
-                                <span class="agent-crm-sales-agents__meta"><?php esc_html_e('Zip Code:', 'agent-crm-sales-agents'); ?> <?php echo esc_html($normalized['licenseZipCode'] ?: __('N/A', 'agent-crm-sales-agents')); ?></span>
+                                <dl class="agent-crm-sales-agents__details">
+                                    <?php if (!empty($normalized['address'])) : ?>
+                                        <div><dt><?php esc_html_e('Address', 'agent-crm-sales-agents'); ?></dt><dd><?php echo esc_html($normalized['address']); ?></dd></div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($normalized['licenseAddress'])) : ?>
+                                        <div><dt><?php esc_html_e('License Address', 'agent-crm-sales-agents'); ?></dt><dd><?php echo esc_html($normalized['licenseAddress']); ?></dd></div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($normalized['licenseZipCode'])) : ?>
+                                        <div><dt><?php esc_html_e('License Zip Code', 'agent-crm-sales-agents'); ?></dt><dd><?php echo esc_html($normalized['licenseZipCode']); ?></dd></div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($normalized['serviceArea'])) : ?>
+                                        <div><dt><?php esc_html_e('Coverage', 'agent-crm-sales-agents'); ?></dt><dd><?php echo esc_html($normalized['serviceArea']); ?></dd></div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($normalized['license'])) : ?>
+                                        <div><dt><?php esc_html_e('License', 'agent-crm-sales-agents'); ?></dt><dd><?php echo esc_html($normalized['license']); ?></dd></div>
+                                    <?php endif; ?>
+                                </dl>
                                 <div class="agent-crm-sales-agents__actions">
                                     <button
                                         type="button"
@@ -713,6 +729,83 @@ final class Agent_CRM_Sales_Agents_Plugin
         return $body;
     }
 
+    private function get_appointment_request_body(WP_REST_Request $request): array
+    {
+        $body = $this->get_json_request_body($request);
+        $settings = $this->get_settings();
+        $first_name = sanitize_text_field((string) ($body['firstName'] ?? ($body['first_name'] ?? '')));
+        $last_name = sanitize_text_field((string) ($body['lastName'] ?? ($body['last_name'] ?? '')));
+        $full_name = sanitize_text_field((string) ($body['fullName'] ?? trim($first_name . ' ' . $last_name)));
+        $phone_code = sanitize_text_field((string) ($body['phoneCode'] ?? ($body['phone_code'] ?? ($body['code'] ?? ''))));
+        $phone_number = sanitize_text_field((string) ($body['phoneNumber'] ?? ($body['phone_number'] ?? ($body['phone'] ?? ''))));
+        $campaign_id = absint($body['campaignId'] ?? $settings['campaign_id']);
+        $email_address = sanitize_email($body['emailAddress'] ?? ($body['email'] ?? ''));
+        $zip_code = sanitize_text_field((string) ($body['zipCode'] ?? ($body['zip'] ?? ($body['pincode'] ?? ''))));
+        $country = sanitize_text_field((string) ($body['country'] ?? 'US'));
+        $start_time = sanitize_text_field((string) ($body['startTime'] ?? ''));
+        $end_time = sanitize_text_field((string) ($body['endTime'] ?? ''));
+        $subject = sanitize_text_field((string) ($body['subject'] ?? __('Website Appointment', 'agent-crm-sales-agents')));
+        $description = sanitize_textarea_field((string) ($body['description'] ?? ($body['notes'] ?? __('Appointment booked from website.', 'agent-crm-sales-agents'))));
+        $form_data = $body['formDataJson'] ?? [];
+
+        if (!is_array($form_data)) {
+            $form_data = [];
+        }
+
+        if ($end_time === '' && $start_time !== '') {
+            try {
+                $end_time = (new DateTimeImmutable($start_time))->modify('+10 minutes')->format('Y-m-d\TH:i:s.000\Z');
+            } catch (Exception $exception) {
+                $end_time = '';
+            }
+        }
+
+        unset(
+            $body['campaignId'],
+            $body['fullName'],
+            $body['firstName'],
+            $body['first_name'],
+            $body['lastName'],
+            $body['last_name'],
+            $body['emailAddress'],
+            $body['email'],
+            $body['phoneCode'],
+            $body['phone_code'],
+            $body['code'],
+            $body['phoneNumber'],
+            $body['phone_number'],
+            $body['phone'],
+            $body['zipCode'],
+            $body['zip'],
+            $body['pincode'],
+            $body['country'],
+            $body['startTime'],
+            $body['endTime'],
+            $body['subject'],
+            $body['description'],
+            $body['notes'],
+            $body['formDataJson']
+        );
+
+        return array_merge(
+            [
+                'campaignId' => $campaign_id,
+                'fullName' => $full_name,
+                'emailAddress' => $email_address,
+                'phoneCode' => $phone_code,
+                'phoneNumber' => $phone_number,
+                'zipCode' => $zip_code,
+                'country' => $country,
+                'startTime' => $start_time,
+                'endTime' => $end_time,
+                'subject' => $subject,
+                'description' => $description,
+                'formDataJson' => array_merge(['source' => 'website'], $form_data),
+            ],
+            $body
+        );
+    }
+
     private function normalize_agent(array $agent): array
     {
         $first = trim((string) ($agent['firstName'] ?? ($agent['first_name'] ?? '')));
@@ -741,7 +834,7 @@ final class Agent_CRM_Sales_Agents_Plugin
         ]);
 
         return [
-            'id' => (string) ($agent['salesAgentId'] ?? ($agent['agentId'] ?? ($agent['userId'] ?? ($agent['id'] ?? '')))),
+            'id' => (string) ($agent['salesAgentId'] ?? ($agent['agentId'] ?? ($agent['userId'] ?? ($agent['id'] ?? ($agent['licenceNumber'] ?? ($agent['licenseNumber'] ?? ($agent['license_number'] ?? ''))))))),
             'name' => $name,
             'initials' => strtoupper(substr($first ?: $name, 0, 1) . substr($last, 0, 1)),
             'email' => sanitize_email($agent['email'] ?? ''),
