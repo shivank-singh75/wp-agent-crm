@@ -424,7 +424,7 @@ final class Agent_CRM_Sales_Agents_Plugin
     public function rest_sales_agents_signup(WP_REST_Request $request): WP_REST_Response
     {
         return $this->rest_proxy_response(
-            $this->proxy_website_request((string) $this->get_settings()['signup_endpoint_path'], $this->get_json_request_body($request))
+            $this->proxy_website_request((string) $this->get_settings()['signup_endpoint_path'], $this->get_signup_request_body($request))
         );
     }
 
@@ -804,6 +804,23 @@ final class Agent_CRM_Sales_Agents_Plugin
             ],
             $body
         );
+    }
+
+    private function get_signup_request_body(WP_REST_Request $request): array
+    {
+        $body = $this->get_json_request_body($request);
+        $settings = $this->get_settings();
+
+        return [
+            'campaignId' => absint($body['campaignId'] ?? $settings['campaign_id']),
+            'firstName' => sanitize_text_field((string) ($body['firstName'] ?? ($body['first_name'] ?? ''))),
+            'lastName' => sanitize_text_field((string) ($body['lastName'] ?? ($body['last_name'] ?? ''))),
+            'email' => sanitize_email($body['email'] ?? ($body['emailAddress'] ?? '')),
+            'address' => sanitize_textarea_field((string) ($body['address'] ?? ($body['licenseAddress'] ?? ($body['licenceAddress'] ?? '')))),
+            'pincode' => sanitize_text_field((string) ($body['pincode'] ?? ($body['zipCode'] ?? ($body['zip_code'] ?? ($body['zip'] ?? ''))))),
+            'phoneCode' => sanitize_text_field((string) ($body['phoneCode'] ?? ($body['phone_code'] ?? ($body['code'] ?? '')))),
+            'phone' => sanitize_text_field((string) ($body['phone'] ?? ($body['phoneNumber'] ?? ($body['phone_number'] ?? '')))),
+        ];
     }
 
     private function normalize_agent(array $agent): array
